@@ -1,8 +1,5 @@
-from msilib.schema import Error
 from pymongo import MongoClient
 import psycopg2
-from psycopg2 import errors
-import time
 
 
 class Database:
@@ -46,7 +43,7 @@ class Database:
         if method == 'content':
             return self.contentrecommend(amount, item)
         
-    def collaborativerecommend(self, amount, item):
+    def collaborativerecommend(self, amount, item, aanvullen=True):
         #
         q = f"SELECT sessionid from looked_at WHERE product_dataid = '{item}'"
         self.cur.execute(q)
@@ -62,21 +59,20 @@ class Database:
             self.cur.execute(q)
             recommends.append(self.cur.fetchall())
             
-        recommendsfinal = []
-        for x in recommends:
-            for y in x:
-                recommendsfinal.append(y)
+        recommendsfinal = returnall(recommends)
         
         recommendsfinal = count([x[0] for x in recommendsfinal])
         recommendsfinal = sorted(recommendsfinal.items(), key=lambda x: x[1])[::-1]
-        
-        if len(recommendsfinal) < 1:
-            print("This product was not looked at before")
             
-        else:
-            return [x[0] for x in recommendsfinal[:amount]]
+        recommendsfinal = [x[0] for x in recommendsfinal[:amount]]
+        if len(recommendsfinal) < 4 and aanvullen:
+            print(f"Dit product is nog niet vaak genoeg bekeken dus het wordt aangevult met "
+                  f"{4 - len(recommendsfinal)} product(en) uit content filtering")
+            recommendsfinal.append(self.contentrecommend(4 - len(recommendsfinal), item, aanvullen=False))
         
-    def contentrecommend(self, amount, item):
+        return returnall(recommendsfinal)
+        
+    def contentrecommend(self, amount, item, aanvullen=True):
         # regel voor content filtering:
         # prijs moet binnen 20% van de originele prijs zitten, sub_sub_category moet hetzelfde zijn
         q = f"SELECT prijs,sub_sub_category FROM product_data WHERE id = '{item}'"
@@ -88,7 +84,12 @@ class Database:
         self.cur.execute(q)
         recommends = self.cur.fetchall()
         
-        return [x[0] for x in recommends[:4]]
+        if len(recommends) < 4 and aanvullen:
+            print(f"Dit product is nog niet vaak genoeg bekeken dus het wordt aangevult met "
+                  f"{4 - len(recommends)} product(en) uit collaborative filtering")
+            recommends.append(self.collaborativerecommend(4 - len(recommends), item, aanvullen=False))
+        
+        return returnall([x[0] for x in recommends[:4]])
     
     def updateproducts(self, max):
         amount = 0
@@ -166,55 +167,56 @@ class Database:
                         orders.append(product)
             
             cur = self.cur
-            try:
-                if isinstance(session['buid'][0], list):
-                    session['buid'][0] = session['buid'][0][0]
+            if isinstance(session['buid'][0], list):
+                session['buid'][0] = session['buid'][0][0]
+                
+            if session['buid'][0] not in buids:
+                buids.append(session['buid'][0])
+                
+                if session['buid'][0] in self.connections.keys():
+                    cur.execute(
+                        f"INSERT INTO session(id, profileid) VALUES('{session['buid'][0]}', '{self.connections[session['buid'][0]]}')")
+                
+                else:
+                    cur.execute(f"INSERT INTO session(id) VALUES('{session['buid'][0]}')")
                     
-                if session['buid'][0] not in buids:
-                    buids.append(session['buid'][0])
-                    
-                    if session['buid'][0] in self.connections.keys():
-                        cur.execute(
-                            f"INSERT INTO session(id, profileid) VALUES('{session['buid'][0]}', '{self.connections[session['buid'][0]]}')")
-                    
-                    else:
-                        cur.execute(f"INSERT INTO session(id) VALUES('{session['buid'][0]}')")
+                # looked at
+                if len(looked_at) > 1:
+                    for look in looked_at:
+                        if isinstance(look, dict):
+                            look = look["id"]
+                        if not look.isdigit():
+                            continue
+                        self.cur.execute(f"INSERT INTO looked_at(product_dataid, sessionid) VALUES('{look}', '{session['buid'][0]}')")
                         
-                    # looked at
-                    if len(looked_at) > 1:
-                        for look in looked_at:
-                            if isinstance(look, dict):
-                                look = look["id"]
-                            if not look.isdigit():
-                                continue
-                            self.cur.execute(f"INSERT INTO looked_at(product_dataid, sessionid) VALUES('{look}', '{session['buid'][0]}')")
-                            
-                    if len(orders) > 1:
-                        for order in orders:
-                            if isinstance(order, dict):
-                                order = order["id"]
-                            if not order.isdigit():
-                                continue
-                            self.cur.execute(f"INSERT INTO \"order\"(product_dataid, sessionid) VALUES('{order}', '{session['buid'][0]}')")
-            except psycopg2.errors.UniqueViolation:
-                print(buids, session["buid"][0])
+                if len(orders) > 1:
+                    for order in orders:
+                        if isinstance(order, dict):
+                            order = order["id"]
+                        if not order.isdigit():
+                            continue
+                        self.cur.execute(f"INSERT INTO \"order\"(product_dataid, sessionid) VALUES('{order}', '{session['buid'][0]}')")
         self.postgres.commit()
     
     def makeallstring(self, data):
+        """Simpele functie dat van een lijst een lijst met strings maakt"""
         return [str(x) for x in data]
     
     def cleardb(self):
+        """gooit heel de postgres database leeg"""
         with open("sql.txt", "r") as f:
             self.cur.execute(f.read())
         self.postgres.commit
 
     def fix_string(self, string):
+        """Verwijderd apostrophen uit strings"""
         if string is None:
             return string
         return "".join(['' if x == "'" else x for x in string])
     
 
 def count(arr):
+    """Simepele functie voor het optellen in een list"""
     counts = {}
     for x in arr:
         if x in counts.keys():
@@ -224,3 +226,18 @@ def count(arr):
             counts[x] = 1
         
     return counts
+
+
+def returnall(arr):
+    """simpele functie om multi dimensionale lists met een diepte van 2 omtezetten naar een diepte van 1"""
+    res = []
+    for x in arr:
+        if not isinstance(x, list):
+            res.append(x)
+            continue
+        for y in x:
+            res.append(y)
+    
+    return res
+
+
