@@ -39,6 +39,57 @@ class Database:
         
         print("the DataBase " + self.dbname["postgres"] + " is updated")
         
+    def recommend(self, amount, method, item):
+        if method == 'collaborative':
+            return self.collaborativerecommend(amount, item)
+        
+        if method == 'content':
+            return self.contentrecommend(amount, item)
+        
+    def collaborativerecommend(self, amount, item):
+        #
+        q = f"SELECT sessionid from looked_at WHERE product_dataid = '{item}'"
+        self.cur.execute(q)
+        sessions = self.cur.fetchall()
+        
+        recommends = []
+        for session in sessions:
+            q = f"SELECT product_dataid " \
+                f"FROM looked_at " \
+                f"WHERE sessionid =  '{session[0]}'" \
+                f"AND NOT product_dataid ='{item}';"
+            
+            self.cur.execute(q)
+            recommends.append(self.cur.fetchall())
+            
+        recommendsfinal = []
+        for x in recommends:
+            for y in x:
+                recommendsfinal.append(y)
+        
+        recommendsfinal = count([x[0] for x in recommendsfinal])
+        recommendsfinal = sorted(recommendsfinal.items(), key=lambda x: x[1])[::-1]
+        
+        if len(recommendsfinal) < 1:
+            print("This product was not looked at before")
+            
+        else:
+            return [x[0] for x in recommendsfinal[:amount]]
+        
+    def contentrecommend(self, amount, item):
+        # regel voor content filtering:
+        # prijs moet binnen 20% van de originele prijs zitten, sub_sub_category moet hetzelfde zijn
+        q = f"SELECT prijs,sub_sub_category FROM product_data WHERE id = '{item}'"
+        self.cur.execute(q)
+        prijs, category = self.cur.fetchall()[0]
+        
+        q = f"SELECT id FROM product_data WHERE prijs > {round(prijs / 100 * 80)} AND prijs < {round(prijs / 100 * 120)} " \
+            f"AND sub_sub_category = '{category}'"
+        self.cur.execute(q)
+        recommends = self.cur.fetchall()
+        
+        return [x[0] for x in recommends[:4]]
+    
     def updateproducts(self, max):
         amount = 0
         for product in self.getcollectiondata("products"):
@@ -85,7 +136,7 @@ class Database:
             for x in profile["buids"]:
                 self.connections[x] = data['id']
                 
-            cur = self.postgres.cursor()
+            cur = self.cur
             cur.execute(f"INSERT INTO profile(id) VALUES('{data['id']}')")
         
         self.postgres.commit()
@@ -114,38 +165,39 @@ class Database:
                     for product in order["products"]:
                         orders.append(product)
             
-            cur = self.postgres.cursor()
-            if session['buid'][0] not in buids:
-                
+            cur = self.cur
+            try:
                 if isinstance(session['buid'][0], list):
                     session['buid'][0] = session['buid'][0][0]
-                if session['buid'][0] in self.connections.keys():
-                    cur.execute(
-                        f"INSERT INTO session(id, profileid) VALUES('{session['buid'][0]}', '{self.connections[session['buid'][0]]}')")
-                
-                else:
-                    cur.execute(f"INSERT INTO session(id) VALUES('{session['buid'][0]}')")
-
-                buids.append(session['buid'][0])
-                
-                # looked at
-                if len(looked_at) > 1:
-                    for look in looked_at:
-                        if isinstance(look, dict):
-                            look = look["id"]
-                        if not look.isdigit():
-                            continue
-                        self.cur.execute(f"INSERT INTO looked_at(product_dataid, sessionid) VALUES('{look}', '{session['buid'][0]}')")
+                    
+                if session['buid'][0] not in buids:
+                    buids.append(session['buid'][0])
+                    
+                    if session['buid'][0] in self.connections.keys():
+                        cur.execute(
+                            f"INSERT INTO session(id, profileid) VALUES('{session['buid'][0]}', '{self.connections[session['buid'][0]]}')")
+                    
+                    else:
+                        cur.execute(f"INSERT INTO session(id) VALUES('{session['buid'][0]}')")
                         
-                if len(orders) > 1:
-                    for order in orders:
-                        if isinstance(order, dict):
-                            order = order["id"]
-                        if not order.isdigit():
-                            continue
-                        self.cur.execute(f"INSERT INTO \"order\"(product_dataid, sessionid) VALUES('{order}', '{session['buid'][0]}')")
-
-
+                    # looked at
+                    if len(looked_at) > 1:
+                        for look in looked_at:
+                            if isinstance(look, dict):
+                                look = look["id"]
+                            if not look.isdigit():
+                                continue
+                            self.cur.execute(f"INSERT INTO looked_at(product_dataid, sessionid) VALUES('{look}', '{session['buid'][0]}')")
+                            
+                    if len(orders) > 1:
+                        for order in orders:
+                            if isinstance(order, dict):
+                                order = order["id"]
+                            if not order.isdigit():
+                                continue
+                            self.cur.execute(f"INSERT INTO \"order\"(product_dataid, sessionid) VALUES('{order}', '{session['buid'][0]}')")
+            except psycopg2.errors.UniqueViolation:
+                print(buids, session["buid"][0])
         self.postgres.commit()
     
     def makeallstring(self, data):
@@ -161,4 +213,14 @@ class Database:
             return string
         return "".join(['' if x == "'" else x for x in string])
     
-    
+
+def count(arr):
+    counts = {}
+    for x in arr:
+        if x in counts.keys():
+            counts[x] += 1
+            
+        else:
+            counts[x] = 1
+        
+    return counts
