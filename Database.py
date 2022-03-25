@@ -1,115 +1,124 @@
 from msilib.schema import Error
-from pymongo import MongoClient, collection
+from pymongo import MongoClient
 import psycopg2
+from psycopg2 import errors
 import time
 
 
 class Database:
-    def __init__(self, dbname):
-        # self.mongoClient = MongoClient("mongodb+srv://daniloDbUser:Joeydanilo1%21@danilo.sxj7r.gcp.mongodb.net/aigp?authSource=admin&replicaSet=Danilo-shard-0&readPreference=primary&appname=MongoDB%20Compass&ssl=true")
+    def __init__(self, mongo, postgres):
         self.mongoClient = MongoClient("localhost")
-        self.mongodb = self.mongoClient["test_database"]
+        self.mongodb = self.mongoClient[mongo]
+        self.dbname = {"mongo": mongo, "postgres": postgres}
 
         self.postgres = psycopg2.connect(
                 host="localhost",
-                dbname=dbname,
+                dbname=postgres,
                 user="postgres",
                 password="admin"
             )
         self.connections = {}
+        self.cur = self.postgres.cursor()
     
-    #Getting data from a mongodb collection
-    def findMongoData(self, collection: collection.Collection, *props):
-        # id, name, price, cat1, cat2, recommendable, sm:active, properties:av_store, properties: av_warehouse
+    # Getting data from a mongodb collection
+    def getcollectiondata(self, collection):
+        return self.mongodb[collection].find()
 
-        options = {}
-
-        #create option dict
-        for key in props:
-            options[key] = 1
-        print(options)
-
-        #Get data from collection
-        # for x in self.db['products'].find({"_id": "100092"}):
-        #     print(x)
-        collection.find()
-        return collection
-        # return collection.find_one({"_id": "100241"})
-
-    def updatedata(self):
+    def updatedata(self, productmax=-1, profilemax=10000, sessionmax=10000):
         self.cleardb()
         
-        dbname = self.mongodb.name
-        print("Connected tot", dbname)
+        print("Connected to", self.dbname["mongo"])
+        self.updateproducts(productmax)
+        print("Updated products")
         
-        self.updateproducts()
-        self.updateprofiles()
-        self.updatesessions()
+        self.updateprofiles(profilemax)
+        print("Updated profiles")
         
-    def updateproducts(self):
-        products = self.mongodb['product_data']
-
-        for product in products.find():
+        self.updatesessions(sessionmax)
+        print("Updated sessions")
+        
+        print("the DataBase " + self.dbname["postgres"] + " is updated")
+        
+    def updateproducts(self, max):
+        amount = 0
+        for product in self.getcollectiondata("products"):
+            amount += 1
+            if amount > max != -1:
+                break
+                
             data = {}
+            if not product["_id"].isdigit():
+                continue
             data["id"] = product["_id"]
-            data["naam"] = self.fix_string(product["name"])
             data["brand"] = self.fix_string(product["brand"])
-            data["prijs"] = product["price"]["selling_price"]
-            categories = product['category']
+            data["prijs"] = str(product["price"]["selling_price"]).split(".")[0]
+            data["gender"] = product["gender"]
             
-            properties = product["properties"]
-            data["ava_store"] = properties["availability_store"] if properties["availability_store"] != "" else 0
-            data["ava_warehouse"] = int(properties["availability_warehouse"])
+            if product["category"] is not None:
+                data["category"] = self.fix_string(product["category"])
+                data["sub_category"] = self.fix_string(product["sub_category"])
+                data["sub_sub_category"] = self.fix_string(product["sub_sub_category"])
+                data["sub_sub_sub_category"] = self.fix_string(product["sub_sub_sub_category"])
             data["recommendable"] = product["recommendable"]
-            data["is_active"] = product["sm"]["is_active"]
-            
-            cur = self.postgres.cursor()
-            cur.execute(f"INSERT INTO product_data(id, naam, prijs, brand,"
-                                  f"availability_store, availability_warehouse, recommendable, active)"
-                                  f"VALUES({data['id']}, '{data['naam']}', {data['prijs']}, '{data['brand']}'"
-                                  f", {data['ava_store']}, {data['ava_warehouse']}, {data['recommendable']}, {data['is_active']})")
-            
-            for category in categories.items():
-                print(category)
-                cur.execute(f"INSERT INTO category(depth, category, product_dataid) VALUES({category[0][-1]}, '{category[1]}', {data['id']})")
+    
+            values = [f'\'{x}\'' for x in data.values()]
+    
+            q = (f"INSERT INTO product_data({', '.join(data.keys())})"
+                                      f'VALUES ({", ".join(values)});')
+                
+            self.cur.execute(q)
+
+        self.postgres.commit()
         
-    def updateprofiles(self):
-        profilescol = self.mongodb['anonymous_profiles']
+    def updateprofiles(self, max):
+        profilescol = self.mongodb['visitors']
         
+        amount = 0
         for profile in profilescol.find():
-            data = {"created_at": profile["sm"]["created"].isoformat(),
-                    "id": profile["_id"]}
-                    
+            amount += 1
+            if amount > max != -1:
+                break
+            
+            if "buids" not in profile.keys():
+                continue
+            data = {"id": profile["_id"]}
             for x in profile["buids"]:
                 self.connections[x] = data['id']
                 
             cur = self.postgres.cursor()
-            cur.execute(f"INSERT INTO profile(id, created_at) VALUES('{data['id']}', '{data['created_at']}')")
+            cur.execute(f"INSERT INTO profile(id) VALUES('{data['id']}')")
         
         self.postgres.commit()
 
-    def updatesessions(self):
-        sessionscol = self.mongodb['anonymous_sessions']
+    def updatesessions(self, max):
         buids = []
         
-        for session in sessionscol.find():
+        amount = 0
+        for session in self.getcollectiondata("sessions_modified"):
+            amount += 1
+            if amount > max != -1:
+                break
+                
+            # try:
             looked_at = []
             orders = []
             for x in session["events"]:
                 product = x["product"]
-                if product == True:
+                if product:
                     if product not in looked_at:
                         looked_at.append(product)
-            
-            order = session["order"]
-            if order["total"] is not None:
-                for product in order["products"]:
-                    orders.append(product)
+                        
+            if "order" in session.keys():
+                order = session["order"]
+                if order is not None:
+                    for product in order["products"]:
+                        orders.append(product)
             
             cur = self.postgres.cursor()
             if session['buid'][0] not in buids:
                 
-                
+                if isinstance(session['buid'][0], list):
+                    session['buid'][0] = session['buid'][0][0]
                 if session['buid'][0] in self.connections.keys():
                     cur.execute(
                         f"INSERT INTO session(id, profileid) VALUES('{session['buid'][0]}', '{self.connections[session['buid'][0]]}')")
@@ -119,28 +128,37 @@ class Database:
 
                 buids.append(session['buid'][0])
                 
-                # NUTTELOOS WANT DATA IS NIET COMPLEET
-                # for product in orders:
-                #     print([product[0] for product in products], product['id'])
-                #     if product['id'] in [product[0] for product in products]:
-                #         cur.execute(f"""INSERT INTO "order"(sessionid, product_dataid) VALUES('{session['buid'][0]}', {product['id']})""")
-                
+                # looked at
+                if len(looked_at) > 1:
+                    for look in looked_at:
+                        if isinstance(look, dict):
+                            look = look["id"]
+                        if not look.isdigit():
+                            continue
+                        self.cur.execute(f"INSERT INTO looked_at(product_dataid, sessionid) VALUES('{look}', '{session['buid'][0]}')")
+                        
+                if len(orders) > 1:
+                    for order in orders:
+                        if isinstance(order, dict):
+                            order = order["id"]
+                        if not order.isdigit():
+                            continue
+                        self.cur.execute(f"INSERT INTO \"order\"(product_dataid, sessionid) VALUES('{order}', '{session['buid'][0]}')")
+
 
         self.postgres.commit()
     
+    def makeallstring(self, data):
+        return [str(x) for x in data]
+    
     def cleardb(self):
-        cur = self.postgres.cursor()
         with open("sql.txt", "r") as f:
-            cur.execute(f.read())
+            self.cur.execute(f.read())
         self.postgres.commit
 
     def fix_string(self, string):
-        return self.replace_space(self.replace_apos(string))
+        if string is None:
+            return string
+        return "".join(['' if x == "'" else x for x in string])
     
-    def replace_space(self, string):
-        return "".join(["_" if x == " " else x for x in string])
-    
-    def replace_apos(self, string):
-        return "".join(["_" if x == "'" else x for x in string])
-
     

@@ -1,3 +1,4 @@
+-- Table
 DROP TABLE IF EXISTS product_data CASCADE;
 DROP TABLE IF EXISTS "session" CASCADE;
 DROP TABLE IF EXISTS profile CASCADE;
@@ -5,46 +6,40 @@ DROP TABLE IF EXISTS "order" CASCADE;
 DROP TABLE IF EXISTS looked_at CASCADE;
 DROP TABLE IF EXISTS category CASCADE;
 CREATE TABLE product_data (
-  id                     BIGSERIAL NOT NULL,
-  naam                   varchar(100),
-  prijs                  int8,
-  brand                  varchar(100),
-  availability_store     int4,
-  availability_warehouse int4,
-  recommendable          bool,
-  active                 bool);
+  id                   varchar(10) NOT NULL,
+  prijs                int8,
+  brand                varchar(100),
+  gender               varchar(255),
+  category             varchar(255),
+  sub_category         varchar(255),
+  sub_sub_category     varchar(255),
+  sub_sub_sub_category varchar(255),
+  recommendable        bool);
 CREATE TABLE "session" (
   id        varchar(255) NOT NULL,
   profileid varchar(255));
 CREATE TABLE profile (
-  id         varchar(255) NOT NULL,
-  created_at varchar(255) NOT NULL);
+  id         varchar(255) NOT NULL);
 CREATE TABLE "order" (
-  id             int4 NOT NULL,
+  id             SERIAL NOT NULL,
   sessionid      varchar(255) NOT NULL,
-  product_dataid int8 NOT NULL);
+  product_dataid varchar(6) NOT NULL);
 CREATE TABLE looked_at (
-  id             int4 NOT NULL,
-  product_dataid int8 NOT NULL,
-  sessionid      varchar(255) NOT NULL);
-CREATE TABLE category (
-  id             SERIAL,
-  depth          int2,
-  category       varchar(255),
-  product_dataid int8 NOT NULL);
+  id                     SERIAL NOT NULL,
+  product_dataid         varchar(6) NOT NULL,
+  sessionid              varchar(255) NOT NULL);
 
 
--- primary keys
+-- Primary keys
 ALTER TABLE product_data ADD PRIMARY KEY (id);
 ALTER TABLE "session" ADD PRIMARY KEY (id);
 ALTER TABLE profile ADD PRIMARY KEY (id);
 ALTER TABLE "order" ADD PRIMARY KEY (id);
 ALTER TABLE looked_at ADD PRIMARY KEY (id);
 
--- foreign keys
+-- Foreign keys
 ALTER TABLE "order" ADD CONSTRAINT FKorder173580 FOREIGN KEY (sessionid) REFERENCES "session" (id);
 ALTER TABLE "order" ADD CONSTRAINT FKorder175339 FOREIGN KEY (product_dataid) REFERENCES product_data (id);
 ALTER TABLE looked_at ADD CONSTRAINT FKlooked_at364278 FOREIGN KEY (product_dataid) REFERENCES product_data (id);
 ALTER TABLE looked_at ADD CONSTRAINT FKlooked_at984640 FOREIGN KEY (sessionid) REFERENCES "session" (id);
 ALTER TABLE "session" ADD CONSTRAINT FKsession166140 FOREIGN KEY (profileid) REFERENCES profile (id);
-ALTER TABLE category ADD CONSTRAINT FKcategory680035 FOREIGN KEY (product_dataid) REFERENCES product_data (id);
