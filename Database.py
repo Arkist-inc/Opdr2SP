@@ -36,12 +36,12 @@ class Database:
         
         print("the DataBase " + self.dbname["postgres"] + " is updated")
         
-    def recommend(self, amount, method, item):
+    def recommend(self, amount, method, item, aanvullen=True):
         if method == 'collaborative':
-            return self.collaborativerecommend(amount, item)
+            return self.collaborativerecommend(amount, item, aanvullen=aanvullen)
         
         if method == 'content':
-            return self.contentrecommend(amount, item)
+            return self.contentrecommend(amount, item, aanvullen=aanvullen)
         
     def collaborativerecommend(self, amount, item, aanvullen=True):
         """Functie voor recommendation om basis van een collaborative rule"""
