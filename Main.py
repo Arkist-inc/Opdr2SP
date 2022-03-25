@@ -19,3 +19,4 @@ if __name__ == '__main__':
     
     recommendations = database.recommend(aantal_producten, method, Product, aanvullen=aanvullen)
     print(recommendations)
+    
