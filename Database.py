@@ -44,7 +44,8 @@ class Database:
             return self.contentrecommend(amount, item)
         
     def collaborativerecommend(self, amount, item, aanvullen=True):
-        #
+        """Functie voor recommendation om basis van een collaborative rule"""
+        
         q = f"SELECT sessionid from looked_at WHERE product_dataid = '{item}'"
         self.cur.execute(q)
         sessions = self.cur.fetchall()
@@ -73,6 +74,7 @@ class Database:
         return returnall(recommendsfinal)
         
     def contentrecommend(self, amount, item, aanvullen=True):
+        """Functie voor recommendation om basis van een content rule"""
         # regel voor content filtering:
         # prijs moet binnen 20% van de originele prijs zitten, sub_sub_category moet hetzelfde zijn
         q = f"SELECT prijs,sub_sub_category FROM product_data WHERE id = '{item}'"
