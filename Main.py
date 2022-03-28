@@ -8,7 +8,7 @@ sessionmax = 100000  # aantal sessions om in te laden, -1 is alles
 
 Product = 32450  # het product waarvan de recommendatie moet worden gegeven
 method = "content"  # keuze uit ["collaborative", "ccontent"]
-aantal_producten = 4  # aantal recommendaties
+aantal_producten = 20  # aantal recommendaties
 aanvullen = True  # of het moet worden aangevuld vanuit de andere soort recommendatie
 
 if __name__ == '__main__':

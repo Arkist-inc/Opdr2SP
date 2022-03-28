@@ -66,10 +66,10 @@ class Database:
         recommendsfinal = sorted(recommendsfinal.items(), key=lambda x: x[1])[::-1]
             
         recommendsfinal = [x[0] for x in recommendsfinal[:amount]]
-        if len(recommendsfinal) < 4 and aanvullen:
+        if len(recommendsfinal) < amount and aanvullen:
             print(f"Dit product is nog niet vaak genoeg bekeken dus het wordt aangevult met "
                   f"{4 - len(recommendsfinal)} product(en) uit content filtering")
-            recommendsfinal.append(self.contentrecommend(4 - len(recommendsfinal), item, aanvullen=False))
+            recommendsfinal.append(self.contentrecommend(amount - len(recommendsfinal), item, aanvullen=False))
         
         return returnall(recommendsfinal)
         
@@ -86,12 +86,12 @@ class Database:
         self.cur.execute(q)
         recommends = self.cur.fetchall()
         
-        if len(recommends) < 4 and aanvullen:
+        if len(recommends) < amount and aanvullen:
             print(f"Dit product is nog niet vaak genoeg bekeken dus het wordt aangevult met "
                   f"{4 - len(recommends)} product(en) uit collaborative filtering")
-            recommends.append(self.collaborativerecommend(4 - len(recommends), item, aanvullen=False))
+            recommends.append(self.collaborativerecommend(amount - len(recommends), item, aanvullen=False))
         
-        return returnall([x[0] for x in recommends[:4]])
+        return returnall(recommends[:amount])
     
     def updateproducts(self, max):
         amount = 0
